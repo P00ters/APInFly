@@ -121,7 +121,7 @@ class APIContext:
 					self.__types_rec(hook[field.api_name.name], branch[key + '_branch'])
 		
 	
-	def flat_fields (self, fields, parent):
+	def flat_fields (self):
 		"""Method to retrieve all of the fields in the context flattened into a list.
 		
 		Returns:

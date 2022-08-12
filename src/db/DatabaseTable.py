@@ -5,6 +5,7 @@ Allows for a database table to be stored and interacted with. Allows for renamin
 the table and retrieval of relational information.
 """
 
+import uuid
 from shared.SharedServices import force_type
 from db.AliasName import AliasName
 from db.DatabaseField import DatabaseField
@@ -24,6 +25,7 @@ class DatabaseTable:
 		parent (Database): The database this table belongs to.
 		children (list of DatabaseField): The child fields in this table. 
 		protection (ProtectionOption, optional): API protections to apply to the table. 
+		gen_id (function): The function to generate new primary keys for insertions.
 	"""
 	def __init__ (self, name, parent, children, **kwargs):
 		caller = 'DatabaseTable.__init__'
@@ -46,8 +48,20 @@ class DatabaseTable:
 		else:
 			self.protection = ProtectionOption(self.fq_name)
 			
+		if 'gen_id' in kwargs:
+			force_type(kwargs.get('gen_id'), 'function', caller=caller)
+			self.gen_id = kwargs.get('gen_id')
+		else:
+			self.gen_id = self.canned_gen_id
+			
 	def clone (self):
 		d = DatabaseTable(self.name, self.parent, self.children, protection=self.protection)
 		d.db_name = self.db_name
 		d.api_name = self.api_name
+		for c in d.children:
+			c = c.clone()
+		d.gen_id = self.gen_id
 		return d
+		
+	def canned_gen_id (self):
+		return str(uuid.uuid4())

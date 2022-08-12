@@ -102,6 +102,7 @@ class MySQL:
 				rows = cursor.fetchall()
 				for row in rows:
 					result.append(row)
+				self.conn.commit()
 			else:
 				return None
 		except Error as e:
@@ -193,5 +194,9 @@ class MySQL:
 			
 			if infield != None and outfield != None:
 				infield.relation = outfield
+				if infield.key != None:
+					infield.key += ',FOR'
+				else:
+					infield.key = 'FOR'
 						
 		return dbs

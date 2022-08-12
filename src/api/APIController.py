@@ -7,6 +7,7 @@ Attributes:
 
 NONSP_PARAMS = ['order_by', 'order_dir', 'page', 'q']
 NONSP_TYPES = ['str', 'str', 'int', 'str']
+API_REL_CHAR = '_'
 
 from shared.SharedServices import force_type, is_type
 
@@ -60,7 +61,7 @@ class APIController:
 				context = c
 		
 		if context == None:
-			return "Bad model/context requested: '" + context_name + "'", 400
+			return "Bad model/context requested: '" + context_name + "'", 404
 		
 		if len(context.tables) < 1:
 			return "Bad model/context processing: '" + context_name + "'", 500
@@ -167,7 +168,6 @@ class APIController:
 		else:
 			sql_query += ';'
 			
-		print(sql_query)
 		result = self.dbc.query(sql_query)
 		
 		if len(result) == 0:
@@ -186,7 +186,50 @@ class APIController:
 				
 			return results, 200
 					
-			
+	
+	def context_post_single (self, context_name, args):
+		"""Handles post requests to create a new instance of the context.
+		
+		Args:
+			context_name (str): The api name ('database_table') of the context.
+			args (dict): The request values passed in the body to populate the new instance. 
+		
+		Returns:
+			dict, int: The error message if a bad query or JSON resultant if good. An
+						http response error code based on query execution.
+		
+		Raises:
+			TypeError: If the arg types are unexpected.
+		"""
+
+		caller = 'APIController.context_put_single'
+		force_type(context_name, 'str', caller=caller)
+		
+		context = None
+		for c in self.contexts:
+			if c.name == context_name:
+				context = c
+
+		if context == None:
+			return "Bad model/context requested: '" + context_name + "'", 404
+		if len(context.tables) < 1:
+			return "Bad model/context processing: '" + context_name + "'", 500
+
+		fields = context.flat_fields()
+		keys = list(args.keys())
+
+		for f in fields:
+			if f.api_name.name not in keys and f.key != 'PRI':
+				return "Missing required arg in body: '" + f.api_name.name + "'", 400
+		
+		packed = context.pack_single(args)
+		sqls = context.post_sql_parts(packed)
+		api_pack = context.pack_api(packed)
+
+		for s in sqls:
+			result = self.dbc.query(s)
+		
+		return api_pack, 201
 		
 	def context_query_single (self, context_name, id):
 		"""Queries a single instance of a context by id. 
@@ -211,7 +254,7 @@ class APIController:
 				context = c
 		
 		if context == None:
-			return "Bad model/context requested: '" + context_name + "'", 400
+			return "Bad model/context requested: '" + context_name + "'", 404
 		
 		if len(context.tables) < 1:
 			return "Bad model/context processing: '" + context_name + "'", 500
@@ -233,7 +276,6 @@ class APIController:
 			sql_query += key_field.sql_name + '="%s";' % id
 		else:
 			sql_query += key_field.sql_name + '=%s;' % id
-		print(sql_query)
 		
 		result = self.dbc.query(sql_query)
 

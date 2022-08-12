@@ -4,6 +4,7 @@ Attributes:
 	API_REL_CHAR (str): Character to separate relations in API naming scheme.
 """
 
+import copy
 from db.Database import Database
 from db.DatabaseTable import DatabaseTable
 from db.DatabaseField import DatabaseField
@@ -22,6 +23,7 @@ class APIContext:
 		schema (list of Database): The schema for the database as a list of Databases.
 		table (DatabaseTable): The table to create the context for.
 		model (dict of DatabaseField): The resultant model for this context.
+		
 	"""
 	def __init__ (self, schema, table):
 		caller = 'APIContext.__init__'
@@ -35,6 +37,7 @@ class APIContext:
 		self.table = table.clone()
 		self.tables = []
 		self.tables.append(self.table)
+		self.reqs = []
 		self.joins = []
 		
 		self.gen_model()
@@ -51,9 +54,12 @@ class APIContext:
 		
 		tid = 't1'
 		self.tables[0].db_name = tid
-		for f in self.table.children:
+		self.reqs.append([])
+		for f in self.tables[0].children:
 			self.model[f.fq_name] = f.clone()
 			self.model[f.fq_name].sql_name = tid + '.' + self.model[f.fq_name].name
+			f.sql_name = tid + '.' + self.model[f.fq_name].name
+			self.reqs[0].append(f.name)
 			if f.relation != None:
 				joiner = self.tables[0].db_name + '.' + f.name + ' = t' + str(len(self.tables) + 1) + '.' + f.relation.name
 				self.joins.append(joiner)
@@ -73,12 +79,18 @@ class APIContext:
 		parent_table = self.tables[len(self.tables) - 1]
 		tid = 't' + str(len(self.tables))
 		self.tables[len(self.tables) - 1].db_name = tid
+		self.reqs.append([])
 		
 		for f in parent_table.children:
-			parent[f.fq_name] = f.clone()
+			g = f.clone()
+			
+			parent[f.fq_name] = g
 			parent[f.fq_name].sql_name = tid + '.' + parent[f.fq_name].name
 			new = api_name_p1 + f.name
 			parent[f.fq_name].api_name.name = new
+			
+			self.reqs[len(self.tables) - 1].append(parent[f.fq_name].api_name.name)
+
 			if f.relation != None:
 				joiner = parent_table.db_name + '.' + f.name + ' = t' + str(len(self.tables) + 1) + '.' + f.relation.name
 				self.joins.append(joiner)
@@ -174,6 +186,57 @@ class APIContext:
 		
 		return sql
 		
+	def post_sql_parts (self, packed):
+		"""Method to generate first pieces of sql queries for insertions.
+		
+		Args:
+			packed (dict): Values packed into and paralleling the model dict.
+		
+		Returns:
+			(list of list of str, list of DatabaseField): A list of insertion statements to be appended onto with values.
+		"""
+		sql = []
+		
+		s = 'INSERT INTO ' + self.tables[0].fq_name + '\nVALUES\n('
+		for key in packed:
+			if '_branch' not in key:
+				if key + '_branch' in packed:
+					if 'varchar' in self.model[key].typ:
+						s += "'" + str(packed[key]) + "',"
+					else:
+						s += str(packed[key]) + ','
+					self.__post_sql_parts_rec(packed[key + '_branch'], self.model[key + '_branch'], self.model[key].relation, sql)
+				else:
+					if 'varchar' in self.model[key].typ:
+						s += "'" + str(packed[key]) + "',"
+					else:
+						s += str(packed[key]) + ','
+		s = s[:len(s) - 1]
+		s += ');'
+		sql.append(s)
+		
+		return sql
+		
+	def __post_sql_parts_rec (self, pack_node, model_node, reld, sql):
+		pt = reld.parent
+		s = 'INSERT INTO ' + pt.fq_name + '\nVALUES\n('
+		for key in pack_node:
+			if '_branch' not in key:
+				if key + '_branch' in pack_node:
+					if 'varchar' in model_node[key].typ:
+						s += "'" + pack_node[key] + "',"
+					else:
+						s += str(pack_node[key]) + ','
+					self.__post_sql_parts_rec(pack_node[key + '_branch'], model_node[key + '_branch'], sql)
+				else:
+					if 'varchar' in model_node[key].typ:
+						s += "'" + pack_node[key] + "',"
+					else:
+						s += str(pack_node[key]) + ','
+		s = s[:len(s) - 1]
+		s += ');'
+		sql.append(s)
+		
 	
 	def unpack_single (self, result):
 		"""Unpacks a single instance of this context into a dict.
@@ -211,8 +274,87 @@ class APIContext:
 				parent[key] = values[ind]
 			else:
 				self.__unpack_single_rec(fields, values, parent[key])
-					
 				
+	
+	def pack_api (self, packed):
+		pack_api = {}
+		for key in packed:
+			if '_branch' not in key:
+				if key + '_branch' in packed:
+					api_n = self.model[key].api_name.name
+					pack_api[api_n] = {}
+					self.__pack_api_rec(pack_api[api_n], packed[key + '_branch'], self.model[key + '_branch'])
+				else:
+					api_n = self.model[key].api_name.name
+					pack_api[api_n] = packed[key]
+					
+		return pack_api
+	
+	def __pack_api_rec (self, new_node, val_node, model_node):
+		for key in val_node:
+			if '_branch' not in key:
+				if key + '_branch' in val_node:
+					api_n = model_node[key].api_name.name
+					new_node[api_n] = {}
+					self.__pack_api_rec(new_node[api_n], val_node[key + '_branch'], model_node[key + '_branch'])
+				else:
+					api_n = model_node[key].api_name.name
+					new_node[api_n] = val_node[key]
+	
+	
+	def pack_single (self, d):
+		"""Packs values for a single instance of this context into a dict.
+		
+		Args:
+			d (dict): A flat dict of context values.
+			
+		Raiases:
+			AttributeError: If d is missing a required value. 
+		"""
+		model = copy.deepcopy(self.model)
+		for key in model:
+			if '_branch' not in key:
+				this_field = model[key]
+				if this_field.api_name.name not in d:
+					if key + '_branch' in model:
+						new_id = this_field.relation.parent.gen_id()
+						rel_field = model[key]
+						model[key] = new_id
+						self.__pack_single_rec(model[key + '_branch'], rel_field, new_id, d)
+					else:
+						if 'PRI' in this_field.key:
+							new_id = self.tables[0].gen_id()
+							model[key] = new_id
+						else:
+							print("Missing key '" + key + "'")
+							raise AttributeError("Missing key '" + key + "'")
+				else:
+					model[key] = d[this_field.api_name.name]
+		
+		return model
+	
+	def __pack_single_rec (self, node, rel_field, new_id, d):
+		for key in node:
+			if '_branch' not in key:
+				this_field = node[key]
+				if this_field.api_name.name not in d:
+					if key + '_branch' in node:
+						n_id = this_field.relation.parent.gen_id()
+						rel_f = node[key]
+						node[key] = n_id
+						self.__pack_single_rec(node[key + '_branch'], rel_f, n_id, d)
+					else:
+						if 'PRI' in this_field.key:
+							n_id = this_field.parent.gen_id()
+							node[key] = n_id
+						else:
+							raise AttributeError("Missing key '" + key + "'")
+				else:
+					node[key] = d[this_field.api_name.name]
+					
+		for key in node:
+			if key == rel_field.relation.fq_name:
+				node[key] = new_id
 				
 				
 		

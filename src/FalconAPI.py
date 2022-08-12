@@ -5,7 +5,7 @@ import falcon
 import falcon.asgi
 import threading
 from shared.SharedServices import force_type
-from falc.FalconResources import GetManyResource
+from falc.FalconResources import GetManyResource, RESTResource
 
 
 class FalconAPI: 
@@ -23,9 +23,11 @@ class FalconAPI:
 		
 		self.apic = apic
 		self.gm = GetManyResource(self.apic)
+		self.r = RESTResource(self.apic)
 	
 	def run_app(self):
 		self.app = falcon.asgi.App()
-		self.app.add_route('/api/get/{model}', self.gm)
+		self.app.add_route('/api/{model}', self.gm)
+		self.app.add_route('/api/{model}/{id}', self.r)
 		return self.app
 		

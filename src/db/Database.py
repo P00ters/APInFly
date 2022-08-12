@@ -30,6 +30,8 @@ class Database:
 		else:
 			self.protection = db.ProtectionOption.ProtectionOption(self.name)
 			
+		
+			
 	def assemble_contexts (self):
 		"""Assembles model contexts for the database in its present state.
 		
@@ -40,3 +42,5 @@ class Database:
 			(list of APIContext): All of the models queryable in the context of the api.
 		"""
 		return
+		
+	

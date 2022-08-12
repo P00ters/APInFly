@@ -237,6 +237,67 @@ class APIContext:
 		s += ');'
 		sql.append(s)
 		
+	def del_sql_parts (self, packed):
+		sql = []
+		s = 'DELETE FROM ' + self.tables[0].fq_name + ' WHERE '
+		for key in packed:
+			if '_branch' not in key:
+				if 'PRI' in self.model[key].key:
+					if 'char' in self.model[key].typ:
+						s += self.model[key].name + "='" + str(packed[key]) + "'"
+					else:
+						s += self.model[key].name + '=' + str(packed[key])
+				if key + '_branch' in packed:
+					rel_t = self.model[key].relation.parent
+					self.__del_sql_parts_rec(packed[key + '_branch'], self.model[key + '_branch'], rel_t, sql)
+		
+		s += ';'
+		sql.append(s)
+		return sql
+		
+	def __del_sql_parts_rec (self, pack_node, model_node, rel_t, sql):
+		s = 'DELETE FROM ' + rel_t.fq_name + ' WHERE '
+		for key in pack_node:
+			if '_branch' not in key:
+				if 'PRI' in model_node[key].key:
+					if 'char' in model_node[key].typ:
+						s += model_node[key].name + "='" + str(pack_node[key]) + "'"
+					else:
+						s += model_node[key].name + '=' + str(pack_node[key])
+				if key + '_branch' in pack_node:
+					rel_t = model_node[key].relation.parent
+					self.__del_sql_parts_rec(pack_node[key + '_branch'], model_node[key + '_branch'], rel_t, sql)
+					
+		s += ';'
+		sql.append(s)
+		
+	def to_model_pack (self, pack):
+		model_pack = {}
+		for key in self.model:
+			if '_branch' not in key:
+				if key + '_branch' in self.model:
+					model_pack[key] = self.model[key].relation.api_name.name
+					model_pack[key + '_branch'] = {}
+					model_pack[key] = self.__to_model_pack_rec(model_pack[key + '_branch'], pack[self.model[key].api_name.name], self.model[key + '_branch'], model_pack[key])
+				else:
+					model_pack[key] = pack[self.model[key].api_name.name]
+		return model_pack
+		
+	def __to_model_pack_rec (self, hook, val_node, model_node, rel_f):
+		
+		retval = None
+		
+		for key in model_node:
+			if model_node[key].name == rel_f:
+				retval = val_node[model_node[key].api_name.name]
+			if '_branch' not in key:
+				if key + '_branch' in model_node:
+					hook[key] = model_node[key].relation.api_name.name
+					hook[key + '_branch'] = {}
+					hook[key] = self.__to_model_pack_rec(hook[key + '_branch'], val_node[model_node[key].api_name.name], model_node[key + '_branch'], hook[key])
+				else:
+					hook[key] = val_node[model_node[key].api_name.name]
+		return retval
 	
 	def unpack_single (self, result):
 		"""Unpacks a single instance of this context into a dict.
@@ -263,7 +324,6 @@ class APIContext:
 					
 		return structure
 		
-	
 	def __unpack_single_rec (self, fields, values, parent):
 		for key in parent:
 			if not is_type(parent[key], 'dict'):
@@ -273,10 +333,11 @@ class APIContext:
 						ind = fields.index(f)
 				parent[key] = values[ind]
 			else:
-				self.__unpack_single_rec(fields, values, parent[key])
-				
+				self.__unpack_single_rec(fields, values, parent[key])		
 	
 	def pack_api (self, packed):
+		"""Repacks model packed dict into dict with valid api key names.
+		"""
 		pack_api = {}
 		for key in packed:
 			if '_branch' not in key:
@@ -300,7 +361,6 @@ class APIContext:
 				else:
 					api_n = model_node[key].api_name.name
 					new_node[api_n] = val_node[key]
-	
 	
 	def pack_single (self, d):
 		"""Packs values for a single instance of this context into a dict.

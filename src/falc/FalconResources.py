@@ -41,6 +41,8 @@ def num_to_status (retno):
 		return falcon.HTTP_200
 	elif retno == 201:
 		return falcon.HTTP_201
+	elif retno == 204:
+		return falcon.HTTP_204
 	elif retno == 400:
 		return falcon.HTTP_400
 	elif retno == 404:
@@ -93,6 +95,18 @@ class RESTResource:
 			resp.text = 'Bad parameters'
 		else:
 			result = self.apic.context_query_single(model, id)
+			data = result[0]
+			retno = result[1]
+			
+			resp.status = num_to_status(retno)
+			resp.text = str(data)
+			
+	async def on_delete (self, req, resp, model, id):
+		if req.query_string != '':
+			resp.status = falcon.HTTP_400
+			resp.text = 'Bad parameters'
+		else:
+			result = self.apic.context_del_single(model, id)
 			data = result[0]
 			retno = result[1]
 			

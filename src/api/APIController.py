@@ -231,6 +231,60 @@ class APIController:
 		
 		return api_pack, 201
 		
+		
+	def context_del_single (self, context_name, id):
+		caller = 'APIController.context_del_single'
+		force_type(context_name, 'str', caller=caller)
+		print("HERE")
+		
+		context = None
+		for c in self.contexts:
+			if c.name == context_name:
+				context = c
+		
+		if context == None:
+			return "Bad model/context requested: '" + context_name + "'", 404
+		
+		if len(context.tables) < 1:
+			return "Bad model/context processing: '" + context_name + "'", 500
+		
+		key_field = None
+		for key in context.model:
+			field = context.model[key]
+			if not is_type(field, 'dict'):
+				if field.key == 'PRI':
+					key_field = field
+				
+		if key_field == None:
+			return "No primary key field found for '" + context_name + "'", 500
+			
+		sql_query = context.get_sql_parts()
+		if len(context.joins) != 0:
+			sql_query += ' \n\tAND '
+		if 'char' in key_field.typ:
+			sql_query += key_field.sql_name + '="%s";' % id
+		else:
+			sql_query += key_field.sql_name + '=%s;' % id
+		
+		result = self.dbc.query(sql_query)
+		print("HERE")
+
+		if len(result) == 0:
+			return '', 404
+		elif len(result) == 1:
+			json_data = context.unpack_single(result[0])
+			model_packed = context.to_model_pack(json_data)
+			print(model_packed)
+			del_sql = context.del_sql_parts(model_packed)
+			print(del_sql)
+			for i in reversed(range(len(del_sql))):
+				sql = del_sql[i]
+				result = self.dbc.query(sql)
+			return '', 204
+		else:
+			return 'Found more than expected contexts', 500
+		
+		
 	def context_query_single (self, context_name, id):
 		"""Queries a single instance of a context by id. 
 		
@@ -272,7 +326,7 @@ class APIController:
 		sql_query = context.get_sql_parts()
 		if len(context.joins) != 0:
 			sql_query += ' \n\tAND '
-		if 'varchar' in key_field.typ:
+		if 'char' in key_field.typ:
 			sql_query += key_field.sql_name + '="%s";' % id
 		else:
 			sql_query += key_field.sql_name + '=%s;' % id
